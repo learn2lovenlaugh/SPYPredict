@@ -29,13 +29,12 @@ jobs:
           import yfinance as yf
 
           TICKERS = ["SPY", "RSP", "XLY", "XLP", "HYG", "IEF"]
-          YEARS = "10y"          # about 2520 trading days, matches the dashboard default
           os.makedirs("data", exist_ok=True)
           failed = []
 
           for tic in TICKERS:
               try:
-                  df = yf.Ticker(tic).history(period=YEARS, auto_adjust=True)
+                  df = yf.Ticker(tic).history(period="10y", auto_adjust=True)
                   if df is None or len(df) < 300:
                       raise ValueError("only %d rows" % (0 if df is None else len(df)))
                   rows = ["Date,Open,High,Low,Close"]
@@ -50,26 +49,102 @@ jobs:
                   failed.append(tic)
               time.sleep(2)
 
-          # SPY is required. Anything else keeps whatever copy is already committed.
           if "SPY" in failed:
               sys.exit(1)
           PY
 
       - name: Download macro series
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
-          set -u
-          UA="Mozilla/5.0 (compatible; spy-entry-risk/3)"
-          for id in VIXCLS BAMLH0A0HYM2 T10Y2Y NFCI; do
-            out="data/$id.csv"
-            if curl -fsS --retry 3 --retry-delay 4 -A "$UA" \
-                 "https://fred.stlouisfed.org/graph/fredgraph.csv?id=$id" -o "$out.tmp" \
-               && [ "$(wc -l < "$out.tmp")" -gt 200 ]; then
-              mv "$out.tmp" "$out"; echo "ok   $id $(wc -l < "$out") rows"
-            else
-              rm -f "$out.tmp"; echo "FAIL $id, keeping previous copy"
-            fi
-          done
+          python - <<'PY'
+          import os, json, urllib.request, urllib.error
+
+          IDS = ["VIXCLS", "BAMLH0A0HYM2", "T10Y2Y", "NFCI"]
+          KEY = os.environ.get("FRED_API_KEY", "").strip()
+          START = "2014-01-01"
+          UA = {"User-Agent": "Mozilla/5.0 (compatible; spy-entry-risk/4)",
+                "Accept": "text/csv,application/json,*/*"}
+          os.makedirs("data", exist_ok=True)
+          missing = []
+
+          def get(url, timeout=40):
+              req = urllib.request.Request(url, headers=UA)
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return r.read().decode("utf-8", "replace")
+
+          def write(sid, pairs):
+              if len(pairs) < 200:
+                  raise ValueError("only %d observations" % len(pairs))
+              with open("data/%s.csv" % sid, "w") as fh:
+                  fh.write("observation_date,%s\n" % sid)
+                  for d, v in pairs:
+                      fh.write("%s,%s\n" % (d, v))
+              print("ok   %-13s %5d rows, last %s" % (sid, len(pairs), pairs[-1][0]))
+
+          def via_api(sid):
+              url = ("https://api.stlouisfed.org/fred/series/observations"
+                     "?series_id=%s&api_key=%s&file_type=json&observation_start=%s"
+                     % (sid, KEY, START))
+              obs = json.loads(get(url))["observations"]
+              return [(o["date"], o["value"]) for o in obs if o["value"] not in (".", "")]
+
+          def via_graph(sid):
+              txt = get("https://fred.stlouisfed.org/graph/fredgraph.csv?id=%s" % sid)
+              out = []
+              for line in txt.splitlines()[1:]:
+                  p = line.split(",")
+                  if len(p) >= 2 and p[1].strip() not in (".", ""):
+                      out.append((p[0].strip(), p[1].strip()))
+              return out
+
+          for sid in IDS:
+              done = False
+              routes = ([("fred api", via_api)] if KEY else []) + [("fredgraph", via_graph)]
+              for label, fn in routes:
+                  try:
+                      write(sid, fn(sid))
+                      done = True
+                      break
+                  except urllib.error.HTTPError as exc:
+                      print("     %-13s %s -> HTTP %s" % (sid, label, exc.code))
+                  except Exception as exc:
+                      print("     %-13s %s -> %s" % (sid, label, str(exc)[:120]))
+              if not done:
+                  missing.append(sid)
+                  print("FAIL %-13s all routes" % sid)
+
+          if not KEY:
+              print("note: FRED_API_KEY secret is not set, so only the blocked endpoint was tried")
+          if missing:
+              print("missing: " + ", ".join(missing))
+          PY
+
+      - name: VIX backstop from Yahoo
+        run: |
+          python - <<'PY'
+          import os
+          if os.path.exists("data/VIXCLS.csv"):
+              print("VIXCLS already present, backstop not needed")
+              raise SystemExit(0)
+          import yfinance as yf
+          df = yf.Ticker("^VIX").history(period="10y", auto_adjust=False)
+          if df is None or len(df) < 300:
+              print("FAIL ^VIX backstop")
+              raise SystemExit(0)
+          with open("data/VIXCLS.csv", "w") as fh:
+              fh.write("observation_date,VIXCLS\n")
+              for r in df.reset_index().itertuples(index=False):
+                  fh.write("%s,%.2f\n" % (r.Date.strftime("%Y-%m-%d"), r.Close))
+          print("ok   VIXCLS from Yahoo ^VIX, %d rows" % len(df))
+          PY
+
+      - name: Report
+        run: |
+          echo "files in data:"
           ls -la data
+          n=$(ls data/*.csv 2>/dev/null | wc -l)
+          echo "$n of 10 series present"
 
       - name: Commit if changed
         run: |
