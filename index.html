@@ -43,9 +43,16 @@ textarea{font-family:var(--mono);font-size:12px;width:100%}
 .card h2{margin:0;padding:10px 14px;font-size:12px;font-weight:650;color:var(--mut);border-bottom:1px solid var(--line2)}
 .card .body{padding:14px}
 
-.score{display:flex;align-items:baseline;gap:10px}
-.score .n{font:600 58px/1 var(--mono);letter-spacing:-.03em}
-.score .of{color:var(--faint);font-family:var(--mono);font-size:14px}
+#gauge svg{display:block;width:100%;max-width:300px;margin:0 auto;height:auto}
+.gv{font:600 40px var(--mono);letter-spacing:-.03em}
+.gs{font:400 11px var(--mono);fill:var(--faint)}
+.gt{font:400 10px var(--mono);fill:#9aa4b0}
+details{border-top:1px solid var(--line2);padding:9px 0 1px;margin-top:2px}
+details summary{cursor:pointer;font-size:12.5px;color:var(--acc);list-style:none;user-select:none}
+details summary::-webkit-details-marker{display:none}
+details summary:before{content:"+  ";font-family:var(--mono)}
+details[open] summary:before{content:"-  "}
+details .note{margin:8px 0 10px;max-width:70ch}
 .band{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid}
 .b-low{color:var(--ok);border-color:#bfe0cd;background:#f0f8f3}
 .b-mod{color:#2f6ea8;border-color:#c6dcef;background:#f1f7fc}
@@ -161,11 +168,56 @@ footer{margin-top:22px;font-size:12px;color:var(--faint);line-height:1.6}
     <div class="card">
       <h2>Composite entry risk</h2>
       <div class="body">
-        <div class="score"><div class="n mono" id="scoreN">--</div><div class="of">/ 100</div></div>
-        <div style="margin:8px 0 4px"><span class="band b-non" id="scoreBand">no data</span></div>
+        <div id="gauge"></div>
+        <div style="text-align:center;margin:2px 0 8px"><span class="band b-non" id="scoreBand">no data</span></div>
         <div class="subtle" id="scoreSub">Higher score means worse conditions for opening new long exposure.</div>
         <div class="hr"></div>
         <div id="blocks"></div>
+
+        <details>
+          <summary>How to read this number</summary>
+          <div class="note">
+            Twenty readings are each mapped to a 0-100 risk value and averaged by weight. Low scores mean the factors
+            agree that conditions are calm and trending; high scores mean they agree that they are not. Middling scores
+            usually mean disagreement between blocks, which the block bars above will show.
+            <br><br>
+            Under 25, conditions are as supportive as this model measures: price above both averages, quiet volatility,
+            spreads tight, breadth intact. 25 to 45 is the ordinary state of a market that is working with some rough
+            edges. 45 to 62 means several blocks have turned at once. Above 62 is the region occupied by corrections and
+            credit events, where the same signals that flag danger also mark the prices that later look cheap.
+            <br><br>
+            The percentile line matters more than the level. A 31 that ranks in the 70th percentile of the last three
+            years is a different message than a 31 in the 20th, because the mapping thresholds are fixed while regimes
+            are not.
+          </div>
+        </details>
+
+        <details>
+          <summary>What it does not tell you</summary>
+          <div class="note">
+            Nothing about direction, size or timing. The score is a summary of conditions that have already happened,
+            built from closing data, so it lags any move now in progress and cannot see a gap tomorrow morning.
+            <br><br>
+            The thresholds and weights are hand-set judgment, not fitted to anything, and they were chosen with the
+            whole sample visible. The sample table below inherits that, so treat it as a description of the past rather
+            than evidence of an edge. A high-risk reading is also what a market bottom looks like from the inside, and
+            a low-risk reading is what the top of a long expansion looks like, which is why this measures conditions
+            rather than opportunity.
+            <br><br>
+            It carries no view on your position size, time horizon, cost basis or tax situation, and it is not
+            investment advice. Two people can read the same 31 and correctly do opposite things.
+          </div>
+        </details>
+
+        <details>
+          <summary>Blocks, weights and missing data</summary>
+          <div class="note">
+            Trend carries 25 points, volatility 25, credit and macro 20, momentum 15, internals 15. Any factor whose
+            data is missing is dropped and the rest are renormalized, so a day scored on 14 factors is still on the
+            same 0-100 scale but is a coarser reading. The factor table shows which ones are absent, and the score is
+            withheld entirely if less than 55 points of weight survive.
+          </div>
+        </details>
       </div>
     </div>
 
@@ -186,6 +238,22 @@ footer{margin-top:22px;font-size:12px;color:var(--faint);line-height:1.6}
     <div class="card">
       <h2>Factors</h2>
       <div class="body" style="padding:4px 0 0"><table id="ftab"><tbody><tr><td class="empty">No data.</td></tr></tbody></table></div>
+      <div class="body" style="padding:0 14px 10px">
+        <details>
+          <summary>How each reading becomes a risk number</summary>
+          <div class="note">
+            Reading is the raw market value. Risk is that value mapped to 0-100 through a fixed curve, so the two move
+            in opposite directions for most factors: a wide gap above the 200d average produces a low risk chip, a
+            spike in credit spreads produces a high one. Two factors are deliberately not one-directional. RSI is
+            penalized below 40 and above 78, because both a breakdown and an overbought push are poor moments to add.
+            The 21d change works the same way past about 9 percent.
+            <br><br>
+            Percentile factors compare today against the last three years of its own history rather than a fixed
+            level, which keeps VIX, realized volatility and credit spreads meaningful across regimes. Weight is the
+            share of the composite each factor carries.
+          </div>
+        </details>
+      </div>
     </div>
   </div>
 
@@ -503,6 +571,42 @@ function build(){
   render();
 }
 
+/* ------------------------------------------------------------------ dial */
+var GB=[[0,25,"#cde4d8"],[25,45,"#cddef1"],[45,62,"#eedebb"],[62,100,"#efc9c4"]];
+function polar(cx,cy,r,deg){ var a=deg*Math.PI/180; return [cx+r*Math.cos(a), cy-r*Math.sin(a)]; }
+function gAng(v){ return 180-1.8*clamp(v,0,100); }
+function gArc(r,v0,v1){
+  var p0=polar(130,132,r,gAng(v0)), p1=polar(130,132,r,gAng(v1));
+  return "M"+p0[0].toFixed(1)+","+p0[1].toFixed(1)+" A"+r+","+r+" 0 0 1 "+p1[0].toFixed(1)+","+p1[1].toFixed(1);
+}
+function drawGauge(v){
+  var s='<svg viewBox="0 0 260 168" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="entry risk '+
+        (isFinite(v)?f2(v,0):"unknown")+' of 100">';
+  GB.forEach(function(b){
+    s+='<path d="'+gArc(96,b[0],b[1])+'" fill="none" stroke="'+b[2]+'" stroke-width="15"/>';
+  });
+  [0,25,45,62,100].forEach(function(t){
+    var a=gAng(t), p0=polar(130,132,88,a), p1=polar(130,132,80,a), lp=polar(130,132,70,a);
+    s+='<line x1="'+p0[0].toFixed(1)+'" y1="'+p0[1].toFixed(1)+'" x2="'+p1[0].toFixed(1)+'" y2="'+p1[1].toFixed(1)+
+       '" stroke="#ffffff" stroke-width="1.6"/>';
+    s+='<text class="gt" x="'+lp[0].toFixed(1)+'" y="'+(lp[1]+3).toFixed(1)+'" text-anchor="middle">'+t+"</text>";
+  });
+  if(isFinite(v)){
+    var col=riskColor(v), a=gAng(v);
+    var tip=polar(130,132,92,a), tail=polar(130,132,-14,a);
+    s+='<path d="'+gArc(96,0,v)+'" fill="none" stroke="'+col+'" stroke-width="15" stroke-linecap="butt" opacity="0.95"/>';
+    s+='<line x1="'+tail[0].toFixed(1)+'" y1="'+tail[1].toFixed(1)+'" x2="'+tip[0].toFixed(1)+'" y2="'+tip[1].toFixed(1)+
+       '" stroke="#151a20" stroke-width="2.2" stroke-linecap="round"/>';
+    s+='<circle cx="130" cy="132" r="5.5" fill="#151a20"/><circle cx="130" cy="132" r="2.2" fill="#ffffff"/>';
+    s+='<text class="gv" x="130" y="120" text-anchor="middle" fill="'+col+'">'+f2(v,0)+"</text>";
+  } else {
+    s+='<text class="gv" x="130" y="120" text-anchor="middle" fill="#b9c1cb">--</text>';
+    s+='<circle cx="130" cy="132" r="5.5" fill="#d5dbe2"/>';
+  }
+  s+='<text class="gs" x="130" y="160" text-anchor="middle">entry risk, 0 calm to 100 stressed</text></svg>';
+  $("gauge").innerHTML=s;
+}
+
 /* ----------------------------------------------------------------- render */
 function render(){
   var o=S.out; if(!o) return;
@@ -510,7 +614,7 @@ function render(){
   var age=Math.round((Date.now()-new Date(D.d[i]+"T21:00:00Z").getTime())/86400000);
   $("asof").textContent="close "+D.d[i]+"  SPY "+f2(D.c[i],2)+(age>4?"  ("+age+"d old)":"");
 
-  $("scoreN").textContent=f2(sc,0); $("scoreN").style.color=riskColor(sc);
+  drawGauge(sc);
   var b=bandOf(sc);
   $("scoreBand").textContent=b[0]+" risk"; $("scoreBand").className="band "+b[1];
 
@@ -750,7 +854,7 @@ $("btnExp").addEventListener("click",function(){
   setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
 });
 
-renderPills(); renderData();
+renderPills(); renderData(); drawGauge(NaN);
 if(LOCAL){ loadAll(); }
 else {
   $("mode").value="off";
