@@ -40,6 +40,7 @@ textarea{font-family:var(--mono);font-size:12px;width:100%}
 .g2{grid-template-columns:360px 1fr}
 .geq{grid-template-columns:1fr 1fr}
 @media(max-width:900px){.g2,.geq{grid-template-columns:1fr}}
+tr.hi td{background:#f6f8fa;font-weight:600}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:7px}
 .card h2{margin:0;padding:10px 14px;font-size:12px;font-weight:650;color:var(--mut);border-bottom:1px solid var(--line2)}
 .card .body{padding:14px}
@@ -73,6 +74,10 @@ th{text-align:left;font-weight:600;color:var(--mut);font-size:11.5px;padding:6px
 td{padding:6px 8px;border-bottom:1px solid var(--line2);vertical-align:top}
 tr:last-child td{border-bottom:0}
 td.num,th.num{text-align:right;font-family:var(--mono)}
+.g1{grid-template-columns:1fr}
+td.sp,th.sp{width:74px;padding:3px 8px}
+td.sp svg{display:block}
+@media(max-width:1050px){td.sp,th.sp{display:none}}
 #dtab td{white-space:normal;overflow-wrap:anywhere}
 #dtab td:first-child,#dtab td:nth-child(3){white-space:nowrap}
 #dtab th:last-child,#dtab td:last-child{width:44%}
@@ -255,6 +260,18 @@ footer{margin-top:22px;font-size:12px;color:var(--faint);line-height:1.6}
             Percentile factors compare today against the last three years of its own history rather than a fixed
             level, which keeps VIX, realized volatility and credit spreads meaningful across regimes. Weight is the
             share of the composite each factor carries.
+            <br><br>
+            The 5d and 20d columns are the change in that factor's risk number over those windows, in risk points, so
+            a red +12 means the factor deteriorated by 12 points while a green -8 means it improved. Changes under 1.5
+            points read as flat. The sparkline is the same risk number over the last six months on a fixed 0 to 100
+            scale, with the midline at 50, so a line drifting up is a factor steadily getting worse regardless of
+            where it sits today. A factor can hold a low risk chip while trending sharply upward, which the single
+            number cannot show.
+            <br><br>
+            Macro series are aligned to their publication date rather than their observation date: high yield spreads
+            and the 2s10s curve are lagged one day, the financial conditions index six, since FRED stamps each value
+            with the date it describes and releases it later. Without that shift the history would use numbers that
+            were not knowable at the time.
           </div>
         </details>
       </div>
@@ -273,6 +290,70 @@ footer{margin-top:22px;font-size:12px;color:var(--faint);line-height:1.6}
       <h2>What this score did in this sample</h2>
       <div class="body" style="padding:4px 0 0"><table id="btab"><tbody><tr><td class="empty">No data.</td></tr></tbody></table></div>
       <div class="body note" style="padding:10px 14px">In-sample description of the loaded history with the current weights. Not a backtest and not a forecast: thresholds were set by hand with the whole sample visible.</div>
+    </div>
+  </div>
+
+  <div class="grid g1">
+    <div class="card">
+      <h2>Evaluation</h2>
+      <div class="body">
+        <div class="frow">
+          <label>Forward horizon</label>
+          <select id="evH"><option value="5">5 days</option><option value="21" selected>21 days</option><option value="63">63 days</option></select>
+          <label>Hold while score is below</label>
+          <input id="evT" type="number" value="45" min="5" max="95" step="1" style="width:70px">
+          <span class="subtle" id="evNote"></span>
+        </div>
+
+        <div class="grid geq" style="margin-top:2px">
+          <div>
+            <table id="ictab"><tbody><tr><td class="empty">No data.</td></tr></tbody></table>
+          </div>
+          <div>
+            <table id="pftab"><tbody><tr><td class="empty">No data.</td></tr></tbody></table>
+            <canvas id="evchart" height="210" style="margin-top:12px"></canvas>
+            <div class="subtle" id="evleg" style="margin-top:2px"></div>
+          </div>
+        </div>
+
+        <details>
+          <summary>Reading the rank correlation table</summary>
+          <div class="note">
+            Each row is the Spearman rank correlation between that factor's risk number on a given day and what SPY did
+            over the following window. Negative is the direction the model claims: higher risk preceded weaker
+            returns. Positive means the factor pointed the wrong way over that sample.
+            <br><br>
+            The noise band printed above the table is roughly two standard errors under the optimistic assumption of
+            independent observations. Correlations inside it are indistinguishable from zero. Because forward windows
+            overlap, the effective sample is closer to the day count divided by the horizon, so the 63 day column rests
+            on well under a hundred independent observations and its band is wide.
+            <br><br>
+            The half columns matter more than the full column. A factor that holds the same sign and rough magnitude
+            in both halves is at least stable across two regimes. One that flips sign is telling you the full-sample
+            number came from a single episode.
+          </div>
+        </details>
+
+        <details>
+          <summary>What this backtest cannot establish</summary>
+          <div class="note">
+            Every threshold, weight and mapping curve in this model was set by hand with the whole sample already
+            visible. That makes all of it in-sample, including the halves, since the design was not frozen before
+            seeing the second half. Treat a good result as a failure to disprove rather than as evidence.
+            <br><br>
+            The rule is deliberately crude: fully long below the threshold, flat above it, taking position from the
+            prior close and earning the next day's return. It charges no commission, no slippage, no bid-ask, no taxes
+            and no interest on the flat periods, all of which favor the rule. Ten years covers one deep drawdown and
+            one long expansion, so the result largely reflects how the threshold happened to sit around a handful of
+            episodes.
+            <br><br>
+            The comparison that usually holds up is drawdown, not return. Sitting out high-volatility stretches
+            typically costs compounding and buys a smaller worst case, and a rule that appears to beat buy and hold on
+            both is more likely overfit than good. Check the switch count too: a rule that trades constantly is
+            reacting to noise in the score.
+          </div>
+        </details>
+      </div>
     </div>
   </div>
 
@@ -474,6 +555,12 @@ function pctRank(a,win){ var o=nan(a.length);
     for(var k=s;k<=i;k++){ if(!isFinite(a[k])) continue; n++; if(a[k]<=a[i]) le++; }
     if(n>=60) o[i]=100*le/n; }
   return o; }
+function shift(a,k){
+  if(!k) return a;
+  var o=nan(a.length);
+  for(var i=k;i<a.length;i++) o[i]=a[i-k];
+  return o;
+}
 function maxRoll(a,n){ var o=nan(a.length);
   for(var i=n-1;i<a.length;i++){ var m=-Infinity;
     for(var k=i-n+1;k<=i;k++) if(a[k]>m) m=a[k]; o[i]=m; }
@@ -547,9 +634,14 @@ function build(){
   var hi=maxRoll(D.c,252), i;
   for(i=0;i<n;i++) if(isFinite(hi[i])) D.dd[i]=D.c[i]/hi[i]-1;
 
-  D.vix=alignTo(D.d,S.mc.VIXCLS); D.vixp=pctRank(D.vix,756); D.vix5=roc(D.vix,5);
-  D.hy=alignTo(D.d,S.mc.BAMLH0A0HYM2); D.hyp=pctRank(D.hy,756); D.hy20=chg(D.hy,20);
-  D.t10y2y=alignTo(D.d,S.mc.T10Y2Y); D.nfci=alignTo(D.d,S.mc.NFCI);
+  /* Lagged to publication, not observation date. FRED stamps an observation
+     with its reference date, which is released one or more days later. */
+  D.vix=alignTo(D.d,S.mc.VIXCLS);
+  D.vixp=pctRank(D.vix,756); D.vix5=roc(D.vix,5);
+  D.hy=shift(alignTo(D.d,S.mc.BAMLH0A0HYM2),1);
+  D.hyp=pctRank(D.hy,756); D.hy20=chg(D.hy,20);
+  D.t10y2y=shift(alignTo(D.d,S.mc.T10Y2Y),1);
+  D.nfci=shift(alignTo(D.d,S.mc.NFCI),6);
 
   function relRoc(a,b,k){ var o=nan(n);
     for(var t=k;t<n;t++) if(isFinite(a[t])&&isFinite(a[t-k])&&isFinite(b[t])&&isFinite(b[t-k])&&a[t-k]&&b[t-k])
@@ -611,6 +703,34 @@ function drawGauge(v){
   $("gauge").innerHTML=s;
 }
 
+/* ------------------------------------------------------ factor history */
+function fSpark(idx,i,win){
+  var o=S.out, lo=Math.max(0,i-win+1), W=68, H=17, segs=[], cur=[], t, x, y, k=0, n=i-lo+1;
+  for(t=lo;t<=i;t++,k++){
+    var r=o.rows[t]&&o.rows[t][idx];
+    if(!r){ if(cur.length>1) segs.push(cur); cur=[]; continue; }
+    x=(W-1)*k/(n-1||1); y=(H-2)*(1-clamp(r.r,0,100)/100)+1;
+    cur.push(x.toFixed(1)+","+y.toFixed(1));
+  }
+  if(cur.length>1) segs.push(cur);
+  if(!segs.length) return "";
+  var last=o.rows[i][idx], col=riskColor(last.r);
+  var s='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" aria-hidden="true">';
+  s+='<line x1="0" y1="'+(H/2)+'" x2="'+W+'" y2="'+(H/2)+'" stroke="#eef1f5" stroke-width="1"/>';
+  segs.forEach(function(p){ s+='<polyline points="'+p.join(" ")+'" fill="none" stroke="#8b95a1" stroke-width="1.2"/>'; });
+  var lx=W-1, ly=(H-2)*(1-clamp(last.r,0,100)/100)+1;
+  s+='<circle cx="'+lx+'" cy="'+ly.toFixed(1)+'" r="2" fill="'+col+'"/></svg>';
+  return s;
+}
+function fDelta(idx,i,k){
+  var o=S.out, now=o.rows[i][idx], past=(i-k>=0&&o.rows[i-k])?o.rows[i-k][idx]:null;
+  if(!now||!past) return '<span class="subtle">-</span>';
+  var d=now.r-past.r;
+  if(Math.abs(d)<1.5) return '<span class="subtle">flat</span>';
+  var col=d>0?"#b0271d":"#177245";
+  return '<span style="color:'+col+'">'+(d>0?"+":"")+d.toFixed(0)+"</span>";
+}
+
 /* ----------------------------------------------------------------- render */
 function render(){
   var o=S.out; if(!o) return;
@@ -638,15 +758,20 @@ function render(){
   });
   $("blocks").innerHTML=bh;
 
-  var th="<thead><tr><th>Factor</th><th class='num'>Reading</th><th class='num'>Wt</th><th class='num'>Risk</th></tr></thead><tbody>";
+  var th="<thead><tr><th>Factor</th><th class='num'>Reading</th><th class='num'>5d</th><th class='num'>20d</th>"+
+         "<th class='sp'>6 months</th><th class='num'>Wt</th><th class='num'>Risk</th></tr></thead><tbody>";
   BLOCKS.forEach(function(bn){
-    th+="<tr class='grp'><td colspan='4'>"+bn+"</td></tr>";
+    th+="<tr class='grp'><td colspan='7'>"+bn+"</td></tr>";
     SPECS.forEach(function(sp,idx){
       if(sp.blk!==bn) return;
       var r=o.rows[i][idx];
-      if(!r){ th+="<tr><td>"+sp.lbl+"</td><td class='num subtle'>no data</td><td class='num subtle'>"+sp.w+"</td><td class='num subtle'>-</td></tr>"; return; }
-      th+="<tr><td>"+sp.lbl+"</td><td class='num'>"+sp.fmt(r.v)+"</td><td class='num subtle'>"+sp.w+
-          "</td><td class='num'><span class='chip' style='background:"+riskColor(r.r)+"'>"+f2(r.r,0)+"</span></td></tr>";
+      if(!r){ th+="<tr><td>"+sp.lbl+"</td><td class='num subtle'>no data</td><td class='num subtle'>-</td>"+
+               "<td class='num subtle'>-</td><td class='sp'></td><td class='num subtle'>"+sp.w+"</td><td class='num subtle'>-</td></tr>"; return; }
+      th+="<tr><td>"+sp.lbl+"</td><td class='num'>"+sp.fmt(r.v)+"</td>"+
+          "<td class='num'>"+fDelta(idx,i,5)+"</td><td class='num'>"+fDelta(idx,i,20)+"</td>"+
+          "<td class='sp'>"+fSpark(idx,i,126)+"</td>"+
+          "<td class='num subtle'>"+sp.w+"</td>"+
+          "<td class='num'><span class='chip' style='background:"+riskColor(r.r)+"'>"+f2(r.r,0)+"</span></td></tr>";
     });
   });
   $("ftab").innerHTML=th+"</tbody>";
@@ -664,7 +789,7 @@ function render(){
   $("flags").innerHTML=fl.map(function(f){
     return '<li><span class="dot" style="background:'+(f.ok?"#177245":"#b0271d")+'"></span>'+f.t+"</li>"; }).join("");
 
-  renderBuckets(); renderData(); drawChart();
+  renderBuckets(); renderData(); drawChart(); evalRender();
 }
 
 function renderBuckets(){
@@ -761,7 +886,7 @@ $("chart").addEventListener("mousemove",function(e){
   $("crossread").textContent=o.D.d[i]+"   score "+f2(o.comp[i],0)+"   SPY "+f2(o.D.c[i],2);
 });
 $("chart").addEventListener("mouseleave",function(){ $("crossread").textContent=""; });
-window.addEventListener("resize",function(){ if(S.out) drawChart(); });
+window.addEventListener("resize",function(){ if(S.out){ drawChart(); evalRender(); } });
 
 /* -------------------------------------------------------------- file load */
 function keyFromName(name){
@@ -822,6 +947,149 @@ function loadBundle(txt){
   }catch(e){ banner("That bundle did not parse: "+esc(e.message)); }
 }
 
+/* ------------------------------------------------------------ evaluation */
+function rankArr(a){
+  var idx=a.map(function(v,i){return i;});
+  idx.sort(function(p,q){ return a[p]-a[q]; });
+  var r=new Array(a.length), i=0;
+  while(i<idx.length){
+    var j=i;
+    while(j+1<idx.length && a[idx[j+1]]===a[idx[i]]) j++;
+    var avg=(i+j)/2+1;
+    for(var k=i;k<=j;k++) r[idx[k]]=avg;
+    i=j+1;
+  }
+  return r;
+}
+function spearman(x,y){
+  var n=x.length; if(n<40) return NaN;
+  var rx=rankArr(x), ry=rankArr(y), i, sx=0, sy=0;
+  for(i=0;i<n;i++){ sx+=rx[i]; sy+=ry[i]; }
+  var mx=sx/n, my=sy/n, cov=0, vx=0, vy=0;
+  for(i=0;i<n;i++){ var a=rx[i]-mx, b=ry[i]-my; cov+=a*b; vx+=a*a; vy+=b*b; }
+  return (vx&&vy)? cov/Math.sqrt(vx*vy) : NaN;
+}
+function ruleSeries(thr){
+  var o=S.out, C=o.D.c, out={d:[],ret:[],pos:[]};
+  for(var i=1;i<o.n;i++){
+    var c=o.comp[i-1];
+    if(!isFinite(c)) continue;
+    out.d.push(o.D.d[i]); out.ret.push(C[i]/C[i-1]-1); out.pos.push(c<thr?1:0);
+  }
+  return out;
+}
+function perf(rs,a,b,timed){
+  var eq=1,peak=1,dd=0,s=0,ss=0,inm=0,sw=0,prev=null,k=0,curve=[];
+  for(var i=a;i<b;i++){
+    var p=timed?rs.pos[i]:1, r=p*rs.ret[i];
+    eq*=1+r; if(eq>peak) peak=eq;
+    var d=eq/peak-1; if(d<dd) dd=d;
+    s+=r; ss+=r*r; inm+=p; k++;
+    if(timed&&prev!==null&&p!==prev) sw++;
+    prev=p; curve.push(eq);
+  }
+  if(!k) return null;
+  var mean=s/k, sd=Math.sqrt(Math.max(ss/k-mean*mean,0));
+  return { cagr:Math.pow(eq,252/k)-1, vol:sd*Math.sqrt(252), sharpe:sd?mean/sd*Math.sqrt(252):NaN,
+           dd:dd, inm:inm/k, sw:sw, curve:curve, n:k };
+}
+function evalRender(){
+  var o=S.out; if(!o) return;
+  var H=parseInt($("evH").value,10)||21;
+  var thr=clamp(parseFloat($("evT").value)||45,5,95);
+
+  var list=[], i;
+  for(i=0;i<o.n-H;i++) if(isFinite(o.comp[i])&&o.rows[i]) list.push(i);
+  if(list.length<200){ $("ictab").innerHTML="<tbody><tr><td class='empty'>Not enough history.</td></tr></tbody>"; return; }
+  var half=list.length>>1, part=[list, list.slice(0,half), list.slice(half)];
+
+  function ic(get,sub){
+    var x=[],y=[];
+    for(var k=0;k<sub.length;k++){
+      var t=sub[k], v=get(t);
+      if(!isFinite(v)) continue;
+      x.push(v); y.push(o.D.c[t+H]/o.D.c[t]-1);
+    }
+    return { r:spearman(x,y), n:x.length };
+  }
+  var band=1.96/Math.sqrt(Math.max(list.length/H,1));
+  $("evNote").textContent=list.length+" days, about "+Math.round(list.length/H)+
+    " independent windows, noise band "+band.toFixed(2);
+
+  function cell(v){
+    if(!isFinite(v)) return "<td class='num subtle'>-</td>";
+    var strong=Math.abs(v)>=band;
+    var col=strong?(v<0?"#177245":"#b0271d"):"#8b95a1";
+    return "<td class='num' style='color:"+col+"'>"+(v<0?"":"+")+v.toFixed(2)+"</td>";
+  }
+  var th="<thead><tr><th>Signal</th><th class='num'>Full</th><th class='num'>1st half</th><th class='num'>2nd half</th></tr></thead><tbody>";
+  var cr=part.map(function(sub){ return ic(function(t){ return o.comp[t]; },sub).r; });
+  th+="<tr class='hi'><td>Composite</td>"+cell(cr[0])+cell(cr[1])+cell(cr[2])+"</tr>";
+  BLOCKS.forEach(function(bn){
+    th+="<tr class='grp'><td colspan='4'>"+bn+"</td></tr>";
+    SPECS.forEach(function(sp,idx){
+      if(sp.blk!==bn) return;
+      var v=part.map(function(sub){ return ic(function(t){ var r=o.rows[t]&&o.rows[t][idx]; return r?r.r:NaN; },sub).r; });
+      th+="<tr><td>"+sp.lbl+"</td>"+cell(v[0])+cell(v[1])+cell(v[2])+"</tr>";
+    });
+  });
+  $("ictab").innerHTML=th+"</tbody>";
+
+  var rs=ruleSeries(thr), m=rs.ret.length>>1;
+  var spans=[["Full",0,rs.ret.length],["1st half",0,m],["2nd half",m,rs.ret.length]];
+  var ph="<thead><tr><th>Period</th><th>Basis</th><th class='num'>CAGR</th><th class='num'>Vol</th>"+
+         "<th class='num'>Sharpe</th><th class='num'>Max DD</th><th class='num'>In mkt</th><th class='num'>Trades</th></tr></thead><tbody>";
+  var full={};
+  spans.forEach(function(sp){
+    [["Rule",true],["Buy and hold",false]].forEach(function(kind){
+      var s=perf(rs,sp[1],sp[2],kind[1]);
+      if(!s) return;
+      if(sp[0]==="Full") full[kind[0]]=s;
+      ph+="<tr"+(sp[0]==="Full"?" class='hi'":"")+"><td>"+sp[0]+"</td><td>"+kind[0]+"</td>"+
+          "<td class='num'>"+pct(s.cagr,1)+"</td><td class='num'>"+pct(s.vol,1)+"</td>"+
+          "<td class='num'>"+f2(s.sharpe,2)+"</td><td class='num'>"+pct(s.dd,1)+"</td>"+
+          "<td class='num'>"+(kind[1]?pct(s.inm,0):"100%")+"</td>"+
+          "<td class='num'>"+(kind[1]?s.sw:"-")+"</td></tr>";
+    });
+  });
+  $("pftab").innerHTML=ph+"</tbody>";
+  if(full.Rule&&full["Buy and hold"]) drawEquity(rs,full.Rule.curve,full["Buy and hold"].curve);
+}
+function drawEquity(rs,cr,cb){
+  var cv=$("evchart"), dpr=window.devicePixelRatio||1, W=cv.clientWidth, H=210;
+  cv.width=W*dpr; cv.height=H*dpr;
+  var g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H);
+  var pad={l:44,r:10,t:10,b:18}, pw=W-pad.l-pad.r, ph=H-pad.t-pad.b, i;
+  var lo=Infinity, hi=-Infinity;
+  for(i=0;i<cr.length;i++){
+    var a=Math.log(cr[i]), b=Math.log(cb[i]);
+    if(a<lo) lo=a; if(a>hi) hi=a; if(b<lo) lo=b; if(b>hi) hi=b;
+  }
+  var X=function(i){ return pad.l+pw*i/(cr.length-1); };
+  var Y=function(v){ return pad.t+ph*(1-(Math.log(v)-lo)/(hi-lo)); };
+  g.strokeStyle="#eef1f5"; g.lineWidth=1; g.font="10px system-ui,sans-serif"; g.fillStyle="#8b95a1";
+  [1,2,4,8].forEach(function(m){
+    if(Math.log(m)<lo||Math.log(m)>hi) return;
+    g.beginPath(); g.moveTo(pad.l,Math.round(Y(m))+.5); g.lineTo(pad.l+pw,Math.round(Y(m))+.5); g.stroke();
+    g.fillText(m+"x",8,Y(m)+3);
+  });
+  g.strokeStyle="#b9c3ce"; g.lineWidth=1.3; g.beginPath();
+  for(i=0;i<cb.length;i++){ if(i) g.lineTo(X(i),Y(cb[i])); else g.moveTo(X(i),Y(cb[i])); }
+  g.stroke();
+  g.strokeStyle="#1f5fbf"; g.lineWidth=1.6; g.beginPath();
+  for(i=0;i<cr.length;i++){ if(i) g.lineTo(X(i),Y(cr[i])); else g.moveTo(X(i),Y(cr[i])); }
+  g.stroke();
+  var mid=Math.floor(cr.length/2);
+  g.strokeStyle="#dfe4ea"; g.setLineDash([3,3]); g.beginPath();
+  g.moveTo(X(mid),pad.t); g.lineTo(X(mid),pad.t+ph); g.stroke(); g.setLineDash([]);
+  g.fillStyle="#8b95a1";
+  var lastY="";
+  for(i=0;i<rs.d.length;i++){ var yr=rs.d[i].slice(0,4);
+    if(yr!==lastY){ if(lastY) g.fillText(yr,X(i)-11,H-5); lastY=yr; } }
+  $("evleg").innerHTML='<span style="color:#1f5fbf">rule</span> against <span style="color:#8b95a1">buy and hold</span>, '+
+    'log scale, growth of 1, dashed line splits the halves';
+}
+
 /* ---------------------------------------------------------------- wiring */
 function readCfg(){
   CFG.mode=$("mode").value; CFG.phost=$("phost").value;
@@ -842,6 +1110,8 @@ $("btnPaste").addEventListener("click",function(){
     setStatus(k,"ok","pasted"); $("pasteBox").value=""; checkEnv(); build();
   }catch(e){ setStatus(k,"err",e.message); }
 });
+$("evH").addEventListener("change",evalRender);
+$("evT").addEventListener("change",evalRender);
 $("btnCfg").addEventListener("click",function(){ $("drawer").classList.toggle("open"); });
 $("btnLoad").addEventListener("click",loadAll);
 $("btnBundleSave").addEventListener("click",saveBundle);
